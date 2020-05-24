@@ -1,0 +1,8 @@
+[Unit]
+Description=Override C-hjkl to Arrow Keys
+
+[Service]
+ExecStart=/usr/local/bin/c-hjkl
+
+[Install]
+WantedBy=multi-user.target

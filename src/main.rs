@@ -1,9 +1,5 @@
 use clap::Clap;
-use libc::{
-    c_char, c_void, gettimeofday, input_event, ioctl, lseek, open, read, timeval, write, O_RDONLY,
-    O_RDWR, O_WRONLY, SEEK_CUR,
-};
-use std::{thread, time};
+use libc::{c_char, c_void, input_event, ioctl, open, read, O_RDONLY};
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "Stewart J. Park <hello@stewartjpark.com>")]
@@ -14,19 +10,15 @@ struct Opts {
         default_value = "/dev/input/by-path/platform-i8042-serio-0-event-kbd"
     )]
     device: String,
+    #[clap(short, long)]
+    debug: bool,
 }
-
-const nilTime: timeval = timeval {
-    tv_sec: 0,
-    tv_usec: 0,
-};
 
 // From linux/input-event-codes.h
 const EVIOCGRAB: u64 = 1074021776;
-const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;
-const SYN_REPORT: u16 = 0;
-const KEY_LEFTCTRL: u16 = 58; //29;
+const KEY_LEFTCTRL: u16 = 29;
+const KEY_CAPSLOCK: u16 = 58;
 const KEY_H: u16 = 35;
 const KEY_J: u16 = 36;
 const KEY_K: u16 = 37;
@@ -35,12 +27,6 @@ const KEY_UP: u16 = 103;
 const KEY_LEFT: u16 = 105;
 const KEY_RIGHT: u16 = 106;
 const KEY_DOWN: u16 = 108;
-const syn: input_event = input_event {
-    time: nilTime,
-    type_: EV_SYN,
-    code: SYN_REPORT,
-    value: 0,
-};
 
 struct KeyboardHandler {
     fd: i32,
@@ -79,6 +65,7 @@ impl KeyboardHandler {
         }
     }
 
+    #[allow(dead_code)]
     fn ungrab(&mut self) {
         unsafe {
             ioctl(self.fd, EVIOCGRAB, 0);
@@ -87,9 +74,8 @@ impl KeyboardHandler {
     }
 
     fn read(&self) -> input_event {
-        let mut ev: input_event = unsafe { std::mem::zeroed() };
-
         unsafe {
+            let mut ev: input_event = std::mem::zeroed();
             if read(
                 self.fd,
                 &mut ev as *mut _ as *mut c_void,
@@ -98,8 +84,8 @@ impl KeyboardHandler {
             {
                 panic!("Read a partial event");
             }
+            ev.clone()
         }
-        ev.clone()
     }
 
     fn write(&mut self, ev: &input_event) {
@@ -114,15 +100,30 @@ fn main() {
     let mut handler = KeyboardHandler::new(&opts.device);
     let mut ctrl_pressed = false;
 
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     handler.grab();
     loop {
         let mut input = handler.read();
 
-        // Maintain ctrl flag
+        if opts.debug == true {
+            println!(
+                "ctrl:{}, ev: {} {} {}",
+                ctrl_pressed, input.type_, input.code, input.value
+            );
+        }
+
+        // Handle Capslock / Ctrl
+        if input.type_ == EV_KEY && input.code == KEY_CAPSLOCK {
+            input.code = KEY_LEFTCTRL;
+        }
+
+        // Maintain Ctrl flag
         if input.type_ == EV_KEY && input.code == KEY_LEFTCTRL {
             ctrl_pressed = input.value != 0;
         }
 
+        // Handle C-hjkl
         if input.type_ == EV_KEY && input.value >= 1 && ctrl_pressed {
             let key_to_press = if input.code == KEY_H {
                 KEY_LEFT
@@ -151,11 +152,12 @@ fn main() {
                 input.value = 1;
                 input.code = KEY_LEFTCTRL;
                 handler.write(&input);
+
+                continue;
             }
         }
 
         // Pass-through
         handler.write(&input);
     }
-    handler.ungrab();
 }
