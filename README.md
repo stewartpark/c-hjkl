@@ -21,3 +21,9 @@ It reads and retains exclusive access to your keyboard (`/dev/input/...`) and cr
 ## Can I change the Ctrl key to something else?
 
 No. this project's scope will be limited to C-hjkl for now. But I'll accept PRs if you make it as an option!
+
+## To do
+
+- [x] Implement the basic functionality
+- [ ] Auto-detect keyboard input devices and grab them
+- [ ] Provide installable artifacts on popular Linux distros (e.g. *.deb, *.rpm, ...)
