@@ -2,7 +2,7 @@
 
 # c-hjkl
 
-c-hjkl remaps Ctrl + HJKL into arrow keys on Linux. (X11/Wayland/Console)
+c-hjkl remaps Ctrl + hjkl into arrow keys on Linux. (X11/Wayland/Console)
 
 
 ## Why did you make this?
