@@ -1,163 +1,36 @@
+mod kbd;
+
 use clap::Clap;
-use libc::{c_char, c_void, input_event, ioctl, open, read, O_RDONLY};
+use std::thread;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "Stewart J. Park <hello@stewartjpark.com>")]
 struct Opts {
-    #[clap(
-        short,
-        long,
-        default_value = "/dev/input/by-path/platform-i8042-serio-0-event-kbd"
-    )]
-    device: String,
     #[clap(short, long)]
-    debug: bool,
-}
-
-// From linux/input-event-codes.h
-const EVIOCGRAB: u64 = 1074021776;
-const EV_KEY: u16 = 0x01;
-const KEY_LEFTCTRL: u16 = 29;
-const KEY_CAPSLOCK: u16 = 58;
-const KEY_H: u16 = 35;
-const KEY_J: u16 = 36;
-const KEY_K: u16 = 37;
-const KEY_L: u16 = 38;
-const KEY_UP: u16 = 103;
-const KEY_LEFT: u16 = 105;
-const KEY_RIGHT: u16 = 106;
-const KEY_DOWN: u16 = 108;
-
-struct KeyboardHandler {
-    fd: i32,
-    uinput: uinput::Device,
-    is_grabbed: bool,
-}
-
-impl KeyboardHandler {
-    pub fn new(device_path: &String) -> KeyboardHandler {
-        unsafe {
-            let fd = open(device_path[..].as_ptr() as *const c_char, O_RDONLY);
-            if fd == -1 {
-                panic!("Cannot open input device: {}", device_path);
-            }
-
-            KeyboardHandler {
-                is_grabbed: false,
-                uinput: uinput::default()
-                    .unwrap()
-                    .name("C-HJKL Output")
-                    .unwrap()
-                    .event(uinput::event::Keyboard::All)
-                    .unwrap()
-                    .create()
-                    .unwrap(),
-                fd,
-            }
-        }
-    }
-
-    fn grab(&mut self) {
-        unsafe {
-            if !self.is_grabbed && ioctl(self.fd, EVIOCGRAB, 1) != -1 {
-                self.is_grabbed = true;
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn ungrab(&mut self) {
-        unsafe {
-            ioctl(self.fd, EVIOCGRAB, 0);
-            self.is_grabbed = false;
-        }
-    }
-
-    fn read(&self) -> input_event {
-        unsafe {
-            let mut ev: input_event = std::mem::zeroed();
-            if read(
-                self.fd,
-                &mut ev as *mut _ as *mut c_void,
-                std::mem::size_of::<input_event>(),
-            ) != (std::mem::size_of::<input_event>() as _)
-            {
-                panic!("Read a partial event");
-            }
-            ev.clone()
-        }
-    }
-
-    fn write(&mut self, ev: &input_event) {
-        self.uinput
-            .write(ev.type_ as _, ev.code as _, ev.value)
-            .unwrap();
-    }
+    verbose: bool,
 }
 
 fn main() {
     let opts: Opts = Opts::parse();
-    let mut handler = KeyboardHandler::new(&opts.device);
-    let mut ctrl_pressed = false;
+    let verbose = opts.verbose;
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    if let Ok(keyboards) = kbd::enumerator::enumerate_keyboards() {
+        let threads = keyboards
+            .into_iter()
+            .map(|kbd| {
+                println!("Keyboard \"{}\" detected.", kbd.name);
 
-    handler.grab();
-    loop {
-        let mut input = handler.read();
+                thread::spawn(move || {
+                    let mut handler = kbd::handler::KeyboardHandler::new(&kbd.device_path, verbose);
+                    handler.run_forever();
+                })
+            })
+            .collect::<Vec<_>>();
 
-        if opts.debug == true {
-            println!(
-                "ctrl:{}, ev: {} {} {}",
-                ctrl_pressed, input.type_, input.code, input.value
-            );
+        for th in threads.into_iter() {
+            th.join().unwrap();
         }
-
-        // Handle Capslock / Ctrl
-        if input.type_ == EV_KEY && input.code == KEY_CAPSLOCK {
-            input.code = KEY_LEFTCTRL;
-        }
-
-        // Maintain Ctrl flag
-        if input.type_ == EV_KEY && input.code == KEY_LEFTCTRL {
-            ctrl_pressed = input.value != 0;
-        }
-
-        // Handle C-hjkl
-        if input.type_ == EV_KEY && input.value >= 1 && ctrl_pressed {
-            let key_to_press = if input.code == KEY_H {
-                KEY_LEFT
-            } else if input.code == KEY_J {
-                KEY_DOWN
-            } else if input.code == KEY_K {
-                KEY_UP
-            } else if input.code == KEY_L {
-                KEY_RIGHT
-            } else {
-                0
-            };
-
-            if key_to_press > 0 {
-                input.value = 0;
-                input.code = KEY_LEFTCTRL;
-                handler.write(&input);
-
-                input.code = key_to_press;
-                input.value = 1;
-                handler.write(&input);
-
-                input.value = 0;
-                handler.write(&input);
-
-                input.value = 1;
-                input.code = KEY_LEFTCTRL;
-                handler.write(&input);
-
-                continue;
-            }
-        }
-
-        // Pass-through
-        handler.write(&input);
+    } else {
+        panic!("Keyboards cannot be detected.");
     }
 }
