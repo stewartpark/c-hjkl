@@ -3,6 +3,7 @@ Description=Override C-hjkl to Arrow Keys
 
 [Service]
 ExecStart=/usr/local/bin/c-hjkl
+RestartForceExitStatus=2
 
 [Install]
 WantedBy=multi-user.target

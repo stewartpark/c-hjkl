@@ -36,7 +36,7 @@ impl KeyboardHandler {
                 is_grabbed: false,
                 uinput: uinput::default()
                     .unwrap()
-                    .name("C-HJKL Output")
+                    .name(format!("C-HJKL Output for {}", device_path))
                     .unwrap()
                     .event(uinput::event::Keyboard::All)
                     .unwrap()
