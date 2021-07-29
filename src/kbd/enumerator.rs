@@ -95,7 +95,7 @@ fn parse_proc_bus_input_devices(contents: &String) -> Vec<Keyboard> {
                     .clone();
 
                 // Only select fully functioning keyboards.
-                if ev == "120013" {
+                if ev == "120013" || name.starts_with("Logitech ERGO") {
                     Some(Keyboard { name, device_path })
                 } else {
                     None
