@@ -110,12 +110,14 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # Replaces the assets on the rolling "latest" release every commit.
+      # Replaces the assets on the rolling "latest" release every commit
+      # (without overwrite, assets from older commits accumulate).
       - name: Create/update release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: c-hjkl (latest)
+          overwrite: true
           fail_on_unmatched_files: true
           body: |
             Built from commit `${{ github.sha }}`. Pick the file matching your
