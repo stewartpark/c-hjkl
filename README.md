@@ -1,4 +1,4 @@
-<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Arrow_keys.jpg/300px-Arrow_keys.jpg" align="right" alt="c-hjkl" />
+<img src="https://upload.wikimedia.org/wikipedia/commons/8/8c/Arrow_keys.jpg" width="300" align="right" alt="c-hjkl" />
 
 # c-hjkl
 
@@ -26,7 +26,7 @@ No. this project's scope will be limited to C-hjkl for now. But I'll accept PRs 
 
 - [x] Implement the basic functionality
 - [x] Auto-detect keyboard input devices and grab them
-- [ ] Provide installable artifacts on popular Linux distros (e.g. *.deb, *.rpm, ...)
+- [x] Provide installable artifacts on popular Linux distros (e.g. *.deb, *.rpm, ...)
 
 ## License
 
