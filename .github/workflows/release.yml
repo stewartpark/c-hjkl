@@ -110,14 +110,19 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # Replaces the assets on the rolling "latest" release every commit
-      # (without overwrite, assets from older commits accumulate).
-      - name: Create/update release
+      # Rolling release: delete the previous "latest" release (and all its
+      # assets) so each commit ships exactly one clean set of packages.
+      # The gh-release action below then creates it fresh.
+      - name: Remove previous "latest" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete latest --cleanup --force 2>/dev/null || true
+
+      - name: Create "latest" release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: c-hjkl (latest)
-          overwrite: true
           fail_on_unmatched_files: true
           body: |
             Built from commit `${{ github.sha }}`. Pick the file matching your
