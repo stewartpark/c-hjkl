@@ -116,7 +116,7 @@ jobs:
       - name: Remove previous "latest" release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete latest --cleanup --force 2>/dev/null || true
+        run: gh release delete latest --yes 2>/dev/null || true
 
       - name: Create "latest" release
         uses: softprops/action-gh-release@v2
