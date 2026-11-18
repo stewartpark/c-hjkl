@@ -112,11 +112,19 @@ jobs:
 
       # Rolling release: delete the previous "latest" release (and all its
       # assets) so each commit ships exactly one clean set of packages.
-      # The gh-release action below then creates it fresh.
+      # Uses `gh api` (stable across gh versions) instead of `gh release
+      # delete`, whose flags have changed between versions.
       - name: Remove previous "latest" release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete latest --yes 2>/dev/null || true
+        run: |
+          ID=$(gh api repos/${{ github.repository }}/releases/tags/latest --jq '.id' 2>/dev/null || true)
+          if [ -n "${ID:-}" ] && [ "$ID" != "null" ]; then
+            gh api -X DELETE repos/${{ github.repository }}/releases/$ID
+            echo "Deleted previous release (id $ID) and its assets"
+          else
+            echo "No previous release to delete"
+          fi
 
       - name: Create "latest" release
         uses: softprops/action-gh-release@v2
