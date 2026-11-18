@@ -27,3 +27,7 @@ No. this project's scope will be limited to C-hjkl for now. But I'll accept PRs 
 - [x] Implement the basic functionality
 - [x] Auto-detect keyboard input devices and grab them
 - [ ] Provide installable artifacts on popular Linux distros (e.g. *.deb, *.rpm, ...)
+
+## License
+
+c-hjkl is licensed under the [MIT License](LICENSE).

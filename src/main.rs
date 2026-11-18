@@ -1,12 +1,12 @@
 pub mod kbd;
 
-use clap::Clap;
+use clap::Parser;
 use std::{thread,process};
 
-#[derive(Clap)]
-#[clap(version = "0.1", author = "Stewart J. Park <hello@stewartjpark.com>")]
+#[derive(Parser)]
+#[command(version = "0.1", author = "Stewart J. Park <hello@stewartjpark.com>")]
 struct Opts {
-    #[clap(short, long)]
+    #[arg(short, long)]
     verbose: bool,
 }
 
@@ -41,5 +41,33 @@ fn main() {
         }
     } else {
         panic!("Keyboards cannot be detected.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_flags_defaults_to_quiet() {
+        let opts = Opts::parse_from(["c-hjkl"]);
+        assert!(!opts.verbose);
+    }
+
+    #[test]
+    fn short_verbose_flag_is_parsed() {
+        let opts = Opts::parse_from(["c-hjkl", "-v"]);
+        assert!(opts.verbose);
+    }
+
+    #[test]
+    fn long_verbose_flag_is_parsed() {
+        let opts = Opts::parse_from(["c-hjkl", "--verbose"]);
+        assert!(opts.verbose);
+    }
+
+    #[test]
+    fn unknown_flag_is_rejected() {
+        assert!(Opts::try_parse_from(["c-hjkl", "--bogus"]).is_err());
     }
 }

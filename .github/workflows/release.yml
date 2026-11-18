@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+# Produces a .deb, .rpm, and .tar.gz (binary + systemd unit) for every
+# commit on master and publishes them to a rolling "latest" GitHub Release.
+jobs:
+  build:
+    name: Build packages (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+            deb_arch: amd64
+            rpm_arch: x86_64
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+            deb_arch: arm64
+            rpm_arch: aarch64
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install latest stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # libudev-dev is required by libudev-sys (transitive dep of uinput);
+      # rpm provides rpmbuild, which fpm uses for the .rpm target.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential pkg-config libudev-dev ruby rpm
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install fpm
+        run: gem install fpm --no-document
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package (deb, rpm, tarball)
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          V=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)
+
+          # deb/rpm install the binary to /usr/bin, so the packaged unit must
+          # point there. The repo unit (and the tarball) keep /usr/local/bin,
+          # which is what manual installs (Makefile) use.
+          sed 's|/usr/local/bin/c-hjkl|/usr/bin/c-hjkl|' systemd/c-hjkl.service > c-hjkl-pkg.service
+
+          # .deb declares libudev1 (stable Debian/Ubuntu package name).
+          fpm -s dir -t deb -n c-hjkl -v "$V" --iteration "$SHA" \
+            -a ${{ matrix.deb_arch }} \
+            --depends libudev1 --license MIT \
+            --url https://github.com/stewartpark/c-hjkl \
+            --description 'Remaps Ctrl+HJKL to arrow keys on Linux' \
+            target/release/c-hjkl=/usr/bin/c-hjkl \
+            c-hjkl-pkg.service=/usr/lib/systemd/system/c-hjkl.service
+
+          # .rpm declares no libudev dependency: the providing package name
+          # differs per distro (systemd-libs on Fedora, etc.), and a wrong
+          # name would break installation.
+          fpm -s dir -t rpm -n c-hjkl -v "$V" --iteration "$SHA" \
+            -a ${{ matrix.rpm_arch }} \
+            --license MIT \
+            --url https://github.com/stewartpark/c-hjkl \
+            --description 'Remaps Ctrl+HJKL to arrow keys on Linux' \
+            target/release/c-hjkl=/usr/bin/c-hjkl \
+            c-hjkl-pkg.service=/usr/lib/systemd/system/c-hjkl.service
+
+          # Tarball for manual installs: binary + original unit
+          # (ExecStart=/usr/local/bin, matching the Makefile).
+          mkdir -p tgz/c-hjkl-$V-${{ matrix.arch }}
+          cp target/release/c-hjkl tgz/c-hjkl-$V-${{ matrix.arch }}/
+          cp systemd/c-hjkl.service tgz/c-hjkl-$V-${{ matrix.arch }}/c-hjkl.service
+          tar -czf c-hjkl-$V-${{ matrix.arch }}-$SHA.tar.gz -C tgz c-hjkl-$V-${{ matrix.arch }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: |
+            c-hjkl_*.deb
+            c-hjkl-*.rpm
+            c-hjkl-*.tar.gz
+
+  release:
+    name: Publish "latest" release
+    needs: build
+    runs-on: ubuntu-latest
+    # Queue (don't cancel) so rapid pushes don't race on the release.
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # Replaces the assets on the rolling "latest" release every commit.
+      - name: Create/update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: c-hjkl (latest)
+          fail_on_unmatched_files: true
+          body: |
+            Built from commit `${{ github.sha }}`. Pick the file matching your
+            architecture (`x86_64`/`amd64` or `aarch64`/`arm64`).
+
+            **Debian/Ubuntu**
+            ```
+            sudo dpkg -i c-hjkl_*_amd64.deb
+            sudo systemctl enable --now c-hjkl
+            ```
+
+            **Fedora/RHEL**
+            ```
+            sudo dnf localinstall c-hjkl-*.rpm
+            sudo systemctl enable --now c-hjkl
+            ```
+
+            **Any distro (tarball)**
+            ```
+            tar -xzf c-hjkl-*-x86_64-*.tar.gz
+            cd c-hjkl-*-x86_64
+            sudo install -m755 c-hjkl /usr/local/bin
+            sudo install -m644 c-hjkl.service /etc/systemd/system
+            sudo systemctl daemon-reload
+            sudo systemctl enable --now c-hjkl
+            ```
+
+            Requires root access to `/dev/input` and the `uinput` kernel
+            module (enabled by default on most distros).
+          files: |
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.tar.gz

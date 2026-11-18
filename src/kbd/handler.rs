@@ -15,6 +15,45 @@ const KEY_LEFT: u16 = 105;
 const KEY_RIGHT: u16 = 106;
 const KEY_DOWN: u16 = 108;
 
+/// Rewrite the Caps Lock key code to Left Ctrl. All other codes are unchanged.
+fn rewrite_code(code: u16) -> u16 {
+    if code == KEY_CAPSLOCK {
+        KEY_LEFTCTRL
+    } else {
+        code
+    }
+}
+
+/// Map a Ctrl+HJKL key press to the corresponding arrow key.
+///
+/// Returns `Some(events)` when the input event must be replaced by exactly
+/// those `(code, value)` events (the original event is swallowed), or
+/// `None` when the input event should pass through unchanged.
+fn remap_ctrl_combo(code: u16, value: i32, ctrl_pressed: bool) -> Option<Vec<(u16, i32)>> {
+    if !ctrl_pressed || value < 1 {
+        return None;
+    }
+
+    let key_to_press = if code == KEY_H {
+        KEY_LEFT
+    } else if code == KEY_J {
+        KEY_DOWN
+    } else if code == KEY_K {
+        KEY_UP
+    } else if code == KEY_L {
+        KEY_RIGHT
+    } else {
+        return None;
+    };
+
+    Some(vec![
+        (KEY_LEFTCTRL, 0),
+        (key_to_press, 1),
+        (key_to_press, 0),
+        (KEY_LEFTCTRL, 1),
+    ])
+}
+
 pub struct KeyboardHandler {
     fd: i32,
     uinput: uinput::Device,
@@ -101,52 +140,110 @@ impl KeyboardHandler {
                 );
             }
 
-            // Handle Capslock / Ctrl
-            if input.type_ == EV_KEY && input.code == KEY_CAPSLOCK {
-                input.code = KEY_LEFTCTRL;
-            }
+            if input.type_ == EV_KEY {
+                // Handle Capslock / Ctrl
+                input.code = rewrite_code(input.code);
 
-            // Maintain Ctrl flag
-            if input.type_ == EV_KEY && input.code == KEY_LEFTCTRL {
-                ctrl_pressed = input.value != 0;
-            }
+                // Maintain Ctrl flag
+                if input.code == KEY_LEFTCTRL {
+                    ctrl_pressed = input.value != 0;
+                }
 
-            // Handle C-hjkl
-            if input.type_ == EV_KEY && input.value >= 1 && ctrl_pressed {
-                let key_to_press = if input.code == KEY_H {
-                    KEY_LEFT
-                } else if input.code == KEY_J {
-                    KEY_DOWN
-                } else if input.code == KEY_K {
-                    KEY_UP
-                } else if input.code == KEY_L {
-                    KEY_RIGHT
-                } else {
-                    0
-                };
-
-                if key_to_press > 0 {
-                    input.value = 0;
-                    input.code = KEY_LEFTCTRL;
-                    self.write(&input);
-
-                    input.code = key_to_press;
-                    input.value = 1;
-                    self.write(&input);
-
-                    input.value = 0;
-                    self.write(&input);
-
-                    input.value = 1;
-                    input.code = KEY_LEFTCTRL;
-                    self.write(&input);
-
+                // Handle C-hjkl
+                if let Some(events) = remap_ctrl_combo(input.code, input.value, ctrl_pressed) {
+                    for (code, value) in events {
+                        input.code = code;
+                        input.value = value;
+                        self.write(&input);
+                    }
                     continue;
                 }
             }
 
             // Pass-through
             self.write(&input);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capslock_code_is_rewritten_to_left_ctrl() {
+        assert_eq!(rewrite_code(KEY_CAPSLOCK), KEY_LEFTCTRL);
+    }
+
+    #[test]
+    fn non_capslock_codes_are_not_rewritten() {
+        for code in [KEY_H, KEY_J, KEY_K, KEY_L, KEY_UP, KEY_LEFT, KEY_LEFTCTRL] {
+            assert_eq!(rewrite_code(code), code);
+        }
+    }
+
+    #[test]
+    fn ctrl_h_remaps_to_left_arrow() {
+        assert_eq!(
+            remap_ctrl_combo(KEY_H, 1, true),
+            Some(vec![
+                (KEY_LEFTCTRL, 0),
+                (KEY_LEFT, 1),
+                (KEY_LEFT, 0),
+                (KEY_LEFTCTRL, 1),
+            ])
+        );
+    }
+
+    #[test]
+    fn ctrl_jkl_remap_to_down_up_right_arrows() {
+        assert_eq!(
+            remap_ctrl_combo(KEY_J, 1, true),
+            Some(vec![
+                (KEY_LEFTCTRL, 0),
+                (KEY_DOWN, 1),
+                (KEY_DOWN, 0),
+                (KEY_LEFTCTRL, 1),
+            ])
+        );
+        assert_eq!(
+            remap_ctrl_combo(KEY_K, 1, true),
+            Some(vec![
+                (KEY_LEFTCTRL, 0),
+                (KEY_UP, 1),
+                (KEY_UP, 0),
+                (KEY_LEFTCTRL, 1),
+            ])
+        );
+        assert_eq!(
+            remap_ctrl_combo(KEY_L, 1, true),
+            Some(vec![
+                (KEY_LEFTCTRL, 0),
+                (KEY_RIGHT, 1),
+                (KEY_RIGHT, 0),
+                (KEY_LEFTCTRL, 1),
+            ])
+        );
+    }
+
+    #[test]
+    fn no_remap_without_ctrl_pressed() {
+        for code in [KEY_H, KEY_J, KEY_K, KEY_L] {
+            assert_eq!(remap_ctrl_combo(code, 1, false), None);
+        }
+    }
+
+    #[test]
+    fn no_remap_on_key_release() {
+        for code in [KEY_H, KEY_J, KEY_K, KEY_L] {
+            assert_eq!(remap_ctrl_combo(code, 0, true), None);
+        }
+    }
+
+    #[test]
+    fn no_remap_for_keys_outside_hjkl() {
+        for code in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, 1, 255] {
+            assert_eq!(remap_ctrl_combo(code, 1, true), None);
         }
     }
 }

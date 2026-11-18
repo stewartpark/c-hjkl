@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# This crate is Linux-only (uinput, libudev), so tests only run on Ubuntu.
+jobs:
+  test:
+    name: Tests (Rust stable)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Tracks the newest stable toolchain on every run.
+      # Pin a specific version here (e.g. `1.100`) for reproducible builds.
+      - name: Install latest stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # libudev-dev is required by libudev-sys (transitive dep of uinput).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential pkg-config libudev-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test
