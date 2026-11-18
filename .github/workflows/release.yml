@@ -39,8 +39,12 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      # sudo: a user-level gem install puts the binstub outside PATH on the
+      # GitHub runners (and fails outright on the arm image).
       - name: Install fpm
-        run: gem install fpm --no-document
+        run: |
+          sudo gem install fpm --no-document
+          fpm --version
 
       - name: Build release binary
         run: cargo build --release
